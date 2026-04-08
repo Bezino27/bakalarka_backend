@@ -845,3 +845,53 @@ class EmailOrUsernameTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         attrs["username"] = username
         return super().validate(attrs)
+    
+
+from rest_framework import serializers
+from .models import CategoryVoteReminderSetting
+
+class CategoryVoteReminderSettingSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
+
+    class Meta:
+        model = CategoryVoteReminderSetting
+        fields = [
+            "id",
+            "club",
+            "category",
+            "category_name",
+            "enabled",
+            "reminder_hours",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "club", "category_name", "updated_at"]
+
+
+class CategoryVoteReminderSettingUpsertSerializer(serializers.Serializer):
+    category_id = serializers.IntegerField()
+    enabled = serializers.BooleanField()
+    reminder_hours = serializers.ListField(
+        child=serializers.IntegerField(min_value=1, max_value=168),
+        allow_empty=True,
+        required=False,
+    )
+
+    def validate_reminder_hours(self, value):
+        cleaned = sorted(set(value), reverse=True)
+        if len(cleaned) > 3:
+            raise serializers.ValidationError("Maximálne 3 pripomienky.")
+        return cleaned
+
+    def validate(self, attrs):
+        enabled = attrs.get("enabled", False)
+        reminder_hours = attrs.get("reminder_hours", [])
+
+        if enabled and not reminder_hours:
+            raise serializers.ValidationError({
+                "reminder_hours": "Ak sú pripomienky zapnuté, musíš vybrať aspoň jednu hodnotu."
+            })
+
+        if not enabled:
+            attrs["reminder_hours"] = []
+
+        return attrs

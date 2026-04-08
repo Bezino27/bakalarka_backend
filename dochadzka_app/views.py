@@ -166,7 +166,9 @@ def create_training_view(request):
 
             logger.info(f"✅ Tréning vytvorený: {training.description}")
             logger.info(f"➡️ Kategória: {training.category.name}")
-
+            # vytvor automatické reminders podľa nastavenia kategórie
+            rebuild_training_vote_reminders(training)
+            
             # Všetci hráči danej kategórie
             players = User.objects.filter(
                 roles__category=training.category,
@@ -1542,14 +1544,17 @@ def training_update_view(request, training_id):
     if request.method == 'PUT':
         serializer = TrainingUpdateSerializer(training, data=request.data)
         if serializer.is_valid():
-            serializer.save()
+            updated_training = serializer.save()
 
-            # ✅ Spusti Celery task na poslanie notifikácie
-            send_training_updated_notification.delay(training.id)
+            # prepočíta automatické reminders podľa aktuálneho nastavenia kategórie
+            rebuild_training_vote_reminders(updated_training)
 
-            return Response(serializer.data)
+            # notifikácia o zmene tréningu
+            send_training_updated_notification.delay(updated_training.id)
+
+            return Response(TrainingUpdateSerializer(updated_training).data)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -4782,3 +4787,93 @@ def coach_overview_view(request):
         "recent_absences": recent_absences,
         "engagement_summary": engagement_summary,
     })
+
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+
+from .models import CategoryVoteReminderSetting, Category, Role, Training
+from .serializers import (
+    CategoryVoteReminderSettingSerializer,
+    CategoryVoteReminderSettingUpsertSerializer,
+)
+from .tasks import rebuild_training_vote_reminders
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def category_vote_reminder_settings_view(request):
+    coach_category_ids = list(
+        request.user.roles.filter(role=Role.COACH).values_list("category_id", flat=True)
+    )
+
+    if request.method == "GET":
+        settings_qs = CategoryVoteReminderSetting.objects.filter(
+            category_id__in=coach_category_ids,
+            club=request.user.club,
+        ).select_related("category", "club")
+
+        existing = {s.category_id: s for s in settings_qs}
+        result = []
+
+        for category_id in coach_category_ids:
+            if category_id in existing:
+                result.append(existing[category_id])
+            else:
+                category = Category.objects.get(id=category_id)
+                pseudo = CategoryVoteReminderSetting(
+                    club=request.user.club,
+                    category=category,
+                    enabled=False,
+                    reminder_hours=[],
+                )
+                result.append(pseudo)
+
+        serializer = CategoryVoteReminderSettingSerializer(result, many=True)
+        return Response(serializer.data)
+
+    serializer = CategoryVoteReminderSettingUpsertSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    category_id = serializer.validated_data["category_id"]
+    enabled = serializer.validated_data["enabled"]
+    reminder_hours = serializer.validated_data.get("reminder_hours", [])
+
+    is_coach = request.user.roles.filter(
+        category_id=category_id,
+        role=Role.COACH
+    ).exists()
+
+    if not is_coach:
+        return Response(
+            {"error": "Nemáš oprávnenie spravovať pripomienky pre túto kategóriu."},
+            status=403
+        )
+
+    category = get_object_or_404(Category, id=category_id, club=request.user.club)
+
+    setting, _ = CategoryVoteReminderSetting.objects.get_or_create(
+        category=category,
+        defaults={
+            "club": request.user.club,
+        }
+    )
+
+    setting.club = request.user.club
+    setting.enabled = enabled
+    setting.reminder_hours = reminder_hours
+    setting.updated_by = request.user
+    setting.save()
+
+    # prepočítať budúce tréningy v tejto kategórii
+    future_trainings = Training.objects.filter(
+        club=request.user.club,
+        category=category,
+        date__gt=timezone.now(),
+    )
+
+    for training in future_trainings:
+        rebuild_training_vote_reminders(training)
+
+    return Response(CategoryVoteReminderSettingSerializer(setting).data, status=200)

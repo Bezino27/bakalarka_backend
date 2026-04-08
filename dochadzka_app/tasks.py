@@ -5,6 +5,20 @@ from .models import User, Role
 from .helpers import send_push_notification  # uprav podľa tvojej štruktúry
 from .models import ExpoPushToken  # uprav podľa tvojej štruktúry
 import logging
+from django.db import transaction
+from django.utils import timezone
+from datetime import timedelta
+
+from .models import (
+    Training,
+    TrainingAttendance,
+    CategoryVoteReminderSetting,
+    TrainingVoteReminder,
+    ExpoPushToken,
+    User,
+    Role,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -703,3 +717,114 @@ def _run_days_before(schedule: TrainingSchedule, now):
     # spúšťaj to denne (napr. 02:10) – aby to bolo konzistentné
     schedule.next_run_at = (now + timedelta(days=1)).replace(hour=2, minute=10, second=0, microsecond=0)
     schedule.save(update_fields=["next_run_at"])
+
+def get_training_unknown_users(training):
+    players = User.objects.filter(
+        roles__category=training.category,
+        roles__role=Role.PLAYER,
+        club=training.club
+    ).distinct()
+
+    attendance_map = {
+        a.user_id: a.status
+        for a in TrainingAttendance.objects.filter(training=training)
+    }
+
+    unknown_ids = [
+        player.id
+        for player in players
+        if attendance_map.get(player.id, "unknown") == "unknown"
+    ]
+
+    return User.objects.filter(id__in=unknown_ids)
+
+
+def rebuild_training_vote_reminders(training):
+    """
+    Zmaže neodoslané reminders pre tréning a vytvorí ich nanovo podľa category settingu.
+    """
+    TrainingVoteReminder.objects.filter(training=training, sent=False).delete()
+
+    try:
+        setting = CategoryVoteReminderSetting.objects.get(
+            category=training.category,
+            club=training.club,
+        )
+    except CategoryVoteReminderSetting.DoesNotExist:
+        return
+
+    if not setting.enabled or not setting.reminder_hours:
+        return
+
+    now = timezone.now()
+    reminders_to_create = []
+
+    for hour in setting.reminder_hours:
+        scheduled_for = training.date - timedelta(hours=hour)
+
+        # nevytváraj reminder do minulosti
+        if scheduled_for <= now:
+            continue
+
+        reminders_to_create.append(
+            TrainingVoteReminder(
+                training=training,
+                setting=setting,
+                hours_before=hour,
+                scheduled_for=scheduled_for,
+            )
+        )
+
+    if reminders_to_create:
+        TrainingVoteReminder.objects.bulk_create(
+            reminders_to_create,
+            ignore_conflicts=True,
+        )
+
+@shared_task
+def process_training_vote_reminders():
+    now = timezone.now()
+
+    reminders = (
+        TrainingVoteReminder.objects
+        .filter(
+            sent=False,
+            scheduled_for__lte=now,
+            training__date__gt=now,
+            setting__enabled=True,
+        )
+        .select_related("training", "training__category", "training__club", "setting")
+        .order_by("scheduled_for")
+    )
+
+    for reminder in reminders:
+        try:
+            users = get_training_unknown_users(reminder.training)
+
+            for user in users:
+                tokens = ExpoPushToken.objects.filter(user=user).values_list("token", flat=True)
+                for token in tokens:
+                    send_push_notification(
+                        token=token,
+                        title="Nezabudni hlasovať!",
+                        message=(
+                            f"Stále si nepotvrdil účasť na tréning "
+                            f"{reminder.training.description} "
+                            f"({reminder.training.date.strftime('%d.%m.%Y %H:%M')})."
+                        ),
+                        data={
+                            "type": "training",
+                            "training_id": reminder.training.id,
+                        }
+                    )
+                    logger.info(
+                        f"Auto reminder {reminder.hours_before}h "
+                        f"pre {user.username} → {token}"
+                    )
+
+            reminder.sent = True
+            reminder.sent_at = now
+            reminder.save(update_fields=["sent", "sent_at"])
+
+        except Exception as e:
+            logger.error(f"❌ Chyba pri process_training_vote_reminders reminder={reminder.id}: {e}")

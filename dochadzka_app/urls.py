@@ -21,7 +21,7 @@ from .views import (me_view, login_view, save_expo_push_token, register_user, ch
                     formation_detail, formations_by_category,add_line_to_formation,formation_player_manage, players_in_category, formation_with_attendance, delete_account_view,training_schedules_list_create,
                     training_schedule_detail,contact_form_view, trial_request_view,
                     training_schedule_run_now, coach_overview_view,
-                    training_schedules_process_now,EmailOrUsernameTokenObtainPairView,
+                    training_schedules_process_now,EmailOrUsernameTokenObtainPairView, category_vote_reminder_settings_view,
 )
 
 urlpatterns = [
@@ -139,7 +139,8 @@ urlpatterns = [
     path('contact-form/', contact_form_view, name='contact_form'),
     path("trial-request/", trial_request_view, name="trial-request"),
     path('coach-overview/', coach_overview_view, name='coach_overview'),
-
+    path("category-vote-reminder-settings/",category_vote_reminder_settings_view,name="category-vote-reminder-settings",),
+    
 
 
 

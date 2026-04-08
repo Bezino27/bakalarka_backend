@@ -14,6 +14,7 @@ from .models import (
     Announcement,AnnouncementRead, ExpoPushToken, Message, MessageReaction, MatchNomination, ClubPaymentSettings, 
     MemberPayment,OrderPayment, JerseyOrder, TrainingSchedule, TrainingScheduleItem
 )
+from .models import CategoryVoteReminderSetting, TrainingVoteReminder
 
 
 class UserCategoryRoleInline(admin.TabularInline):
@@ -177,7 +178,22 @@ class TrainingScheduleAdmin(admin.ModelAdmin):
 
 @admin.register(TrainingScheduleItem)
 class TrainingScheduleItemAdmin(admin.ModelAdmin):
-    list_display = [field.name for field in TrainingScheduleItem._meta.fields]    
+    list_display = [field.name for field in TrainingScheduleItem._meta.fields] 
+       
+
+@admin.register(CategoryVoteReminderSetting)
+class CategoryVoteReminderSettingAdmin(admin.ModelAdmin):
+    list_display = ("category", "club", "enabled", "reminder_hours", "updated_by", "updated_at")
+    list_filter = ("enabled", "club")
+    search_fields = ("category__name", "club__name")
+
+
+@admin.register(TrainingVoteReminder)
+class TrainingVoteReminderAdmin(admin.ModelAdmin):
+    list_display = ("training", "hours_before", "scheduled_for", "sent", "sent_at")
+    list_filter = ("sent", "training__club", "training__category")
+    search_fields = ("training__description", "training__category__name")
+
 
 from django.contrib import admin
 from .models import Position, User

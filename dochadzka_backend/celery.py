@@ -18,3 +18,14 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute="*/5"),
     },
 }
+
+app.conf.beat_schedule = {
+    "process-training-schedules-every-5-min": {
+        "task": "dochadzka_app.tasks.process_training_schedules",
+        "schedule": crontab(minute="*/5"),
+    },
+    "process-training-vote-reminders-every-5-min": {
+        "task": "dochadzka_app.tasks.process_training_vote_reminders",
+        "schedule": crontab(minute="*/5"),
+    },
+}

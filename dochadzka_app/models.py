@@ -471,3 +471,112 @@ class TrainingScheduleItem(models.Model):
         return f"{self.schedule.category}: {self.weekday} {self.time}"
 
 
+
+from datetime import timedelta
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
+class CategoryVoteReminderSetting(models.Model):
+    club = models.ForeignKey(
+        "Club",
+        on_delete=models.CASCADE,
+        related_name="vote_reminder_settings",
+    )
+    category = models.OneToOneField(
+        "Category",
+        on_delete=models.CASCADE,
+        related_name="vote_reminder_setting",
+    )
+
+    enabled = models.BooleanField(default=False)
+    reminder_hours = models.JSONField(default=list, blank=True)
+
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_vote_reminder_settings",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category__name"]
+
+    def clean(self):
+        if self.category.club_id != self.club_id:
+            raise ValidationError("Kategória nepatrí do zvoleného klubu.")
+
+        if not isinstance(self.reminder_hours, list):
+            raise ValidationError("reminder_hours musí byť zoznam.")
+
+        cleaned = []
+        for h in self.reminder_hours:
+            try:
+                hour = int(h)
+            except (TypeError, ValueError):
+                raise ValidationError("Každá hodnota v reminder_hours musí byť číslo.")
+
+            if hour < 1 or hour > 168:
+                raise ValidationError("Každý interval musí byť v rozsahu 1 až 168 hodín.")
+            cleaned.append(hour)
+
+        cleaned = sorted(set(cleaned), reverse=True)
+
+        if len(cleaned) > 3:
+            raise ValidationError("Maximálne 3 pripomienky na kategóriu.")
+
+        self.reminder_hours = cleaned
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.club.name} / {self.category.name} / reminders"
+
+
+class TrainingVoteReminder(models.Model):
+    training = models.ForeignKey(
+        "Training",
+        on_delete=models.CASCADE,
+        related_name="vote_reminders",
+    )
+    setting = models.ForeignKey(
+        "CategoryVoteReminderSetting",
+        on_delete=models.CASCADE,
+        related_name="training_reminders",
+    )
+
+    hours_before = models.PositiveIntegerField()
+    scheduled_for = models.DateTimeField(db_index=True)
+
+    sent = models.BooleanField(default=False, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ("training", "hours_before")
+        ordering = ["scheduled_for"]
+
+    def clean(self):
+        if self.training.category_id != self.setting.category_id:
+            raise ValidationError("Reminder setting nepatrí k rovnakej kategórii ako tréning.")
+
+        if self.hours_before < 1 or self.hours_before > 168:
+            raise ValidationError("hours_before musí byť v rozsahu 1 až 168.")
+
+        scheduled = self.training.date - timedelta(hours=self.hours_before)
+        if scheduled >= self.training.date:
+            raise ValidationError("scheduled_for musí byť pred dátumom tréningu.")
+
+        self.scheduled_for = scheduled
+
+    def save(self, *args, **kwargs):
+        self.scheduled_for = self.training.date - timedelta(hours=self.hours_before)
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.training} / {self.hours_before}h"
