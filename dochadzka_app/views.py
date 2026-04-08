@@ -4162,11 +4162,9 @@ def _run_weekly_batch_now(schedule: TrainingSchedule):
 
     created = 0
     with transaction.atomic():
-        # ✅ generuj v rámci týždňa, kde je start (nie vždy next_week_monday)
+        # generuj v rámci týždňa, kde je start
         week_monday = _week_start(start)
-        week_sunday = week_monday + timedelta(days=6)
 
-        # ale stále nech je to ohraničené intervalom start..end
         for item in schedule.items.all():
             dt = _dt_for_weekday(week_monday, item.weekday, item.time)
             dt_date = dt.date()
@@ -4174,7 +4172,7 @@ def _run_weekly_batch_now(schedule: TrainingSchedule):
             if dt_date < start or dt_date > end:
                 continue
 
-            _, was_created = Training.objects.get_or_create(
+            training, was_created = Training.objects.get_or_create(
                 club=schedule.club,
                 category=schedule.category,
                 date=dt,
@@ -4184,7 +4182,9 @@ def _run_weekly_batch_now(schedule: TrainingSchedule):
                     "created_by": schedule.created_by,
                 }
             )
+
             if was_created:
+                rebuild_training_vote_reminders(training)
                 created += 1
 
     # posuň next_run_at o 7 dní
@@ -4202,7 +4202,6 @@ def _run_days_before_now(schedule: TrainingSchedule):
     target_date = today + timedelta(days=schedule.days_before or 0)
 
     if target_date < schedule.start_date or target_date > schedule.end_date:
-        # posuň na zajtra 02:10
         schedule.next_run_at = (now + timedelta(days=1)).replace(hour=2, minute=10, second=0, microsecond=0)
         schedule.save(update_fields=["next_run_at"])
         return 0
@@ -4217,7 +4216,7 @@ def _run_days_before_now(schedule: TrainingSchedule):
 
             dt = timezone.make_aware(datetime.combine(target_date, item.time))
 
-            _, was_created = Training.objects.get_or_create(
+            training, was_created = Training.objects.get_or_create(
                 club=schedule.club,
                 category=schedule.category,
                 date=dt,
@@ -4227,13 +4226,14 @@ def _run_days_before_now(schedule: TrainingSchedule):
                     "created_by": schedule.created_by,
                 }
             )
+
             if was_created:
+                rebuild_training_vote_reminders(training)
                 created += 1
 
     schedule.next_run_at = (now + timedelta(days=1)).replace(hour=2, minute=10, second=0, microsecond=0)
     schedule.save(update_fields=["next_run_at"])
     return created
-
 
 
 @api_view(["POST"])

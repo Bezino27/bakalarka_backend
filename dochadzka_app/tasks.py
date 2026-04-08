@@ -660,6 +660,7 @@ def _run_weekly_batch(schedule: TrainingSchedule, now):
             )
 
             if was_created:
+                rebuild_training_vote_reminders(training)
                 created_ids.append(training.id)
 
     if created_ids:
@@ -711,6 +712,7 @@ def _run_days_before(schedule: TrainingSchedule, now):
             )
 
             if was_created:
+                rebuild_training_vote_reminders(training)
                 send_training_notifications.delay(training.id)
 
 
