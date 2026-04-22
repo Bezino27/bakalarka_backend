@@ -101,16 +101,17 @@ SIMPLE_JWT = {
 # =========================================================
 # CORS
 # =========================================================
-CORS_ALLOW_CREDENTIALS = True
-
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost,http://localhost:3000,http://localhost:8081,https://ludimus.sk,https://www.ludimus.sk"
+        "http://localhost,http://localhost:3000,http://localhost:8081,https://ludimus.sk,https://www.ludimus.sk,https://app.ludimus.sk"
     ).split(",")
     if origin.strip()
 ]
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
 
 CORS_ALLOW_METHODS = [
     "GET",
@@ -128,7 +129,6 @@ CORS_ALLOW_HEADERS = [
 
 # Produkcia: nechaj False
 # Ak by si chcel dočasne povoliť všetko, daj v .env CORS_ALLOW_ALL_ORIGINS=True
-CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "False").lower() == "true"
 
 
 # =========================================================
