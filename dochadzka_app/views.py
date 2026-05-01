@@ -2017,7 +2017,11 @@ def member_payments(request):
     serializer = MemberPaymentSerializer(payments, many=True)
     return Response(serializer.data)
 
+
 from dochadzka_app.tasks import notify_created_member_payment, notify_payment_status
+from .models import ClubPaymentSettings, MemberPayment, PaymentCycle
+from dochadzka_app.tasks import notify_created_member_payment, notify_payment_status
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -2055,13 +2059,13 @@ def create_member_payments(request):
         )
 
     valid_cycles = [choice[0] for choice in PaymentCycle.choices]
+
     if cycle not in valid_cycles:
         return Response(
             {"error": "Neplatný cyklus platby."},
             status=400
         )
 
-    # výber používateľov
     if user_id:
         users = User.objects.filter(id=user_id, club=club)
     elif category_id:
@@ -2073,6 +2077,12 @@ def create_member_payments(request):
         users = User.objects.filter(id__in=user_ids, club=club)
     else:
         users = User.objects.filter(club=club)
+
+    if not users.exists():
+        return Response(
+            {"error": "Nenašli sa žiadni používatelia pre vytvorenie platby."},
+            status=400
+        )
 
     created = []
 
@@ -2092,7 +2102,11 @@ def create_member_payments(request):
             description=description,
         )
 
-        notify_created_member_payment.delay(user.id, amount, due_date)
+        try:
+            notify_created_member_payment.delay(user.id, amount, due_date)
+        except Exception as e:
+            print("⚠️ Nepodarilo sa odoslať notifikáciu o vytvorenej platbe:", e)
+
         created.append(payment.id)
 
     return Response({"created_payments": created}, status=201)
