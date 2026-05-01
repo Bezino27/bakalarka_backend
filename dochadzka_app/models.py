@@ -246,12 +246,25 @@ class ClubPaymentSettings(models.Model):
 class MemberPayment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     club = models.ForeignKey(Club, on_delete=models.CASCADE)
+
     amount = models.DecimalField(max_digits=8, decimal_places=2)
+
+    cycle = models.CharField(
+        max_length=20,
+        choices=PaymentCycle.choices,
+        default=PaymentCycle.MONTHLY,
+    )
+
+    period_start = models.DateField(null=True, blank=True)
+    period_end = models.DateField(null=True, blank=True)
+
     due_date = models.DateField()
+
     variable_symbol = models.CharField(max_length=20)
     is_paid = models.BooleanField(default=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
-    description = models.CharField(max_length=255, blank=True, default="")  # ← nový stĺpec
+    description = models.CharField(max_length=255, blank=True, default="")
 
     def __str__(self):
         return f"{self.user} – {self.amount} € – VS: {self.variable_symbol}"

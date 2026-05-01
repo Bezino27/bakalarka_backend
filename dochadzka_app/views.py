@@ -2023,19 +2023,43 @@ from dochadzka_app.tasks import notify_created_member_payment, notify_payment_st
 @permission_classes([IsAuthenticated])
 def create_member_payments(request):
     club = request.user.club
+
     try:
         settings = ClubPaymentSettings.objects.get(club=club)
     except ClubPaymentSettings.DoesNotExist:
-        return Response({"error": "Klub nemá nastavené platobné údaje."}, status=400)
+        return Response(
+            {"error": "Klub nemá nastavené platobné údaje."},
+            status=400
+        )
 
     amount = request.data.get("amount")
     due_date = request.data.get("due_date")
     category_id = request.data.get("category_id")
     user_id = request.data.get("user_id")
-    description = request.data.get("description", "")  # <- pridaj túto riadku
+    description = request.data.get("description", "")
+
+    cycle = request.data.get("cycle") or settings.payment_cycle
+    period_start = request.data.get("period_start")
+    period_end = request.data.get("period_end")
 
     if not amount or not due_date:
-        return Response({"error": "Zadaj amount a due_date."}, status=400)
+        return Response(
+            {"error": "Zadaj amount a due_date."},
+            status=400
+        )
+
+    if not period_start or not period_end:
+        return Response(
+            {"error": "Zadaj period_start a period_end."},
+            status=400
+        )
+
+    valid_cycles = [choice[0] for choice in PaymentCycle.choices]
+    if cycle not in valid_cycles:
+        return Response(
+            {"error": "Neplatný cyklus platby."},
+            status=400
+        )
 
     # výber používateľov
     if user_id:
@@ -2045,27 +2069,33 @@ def create_member_payments(request):
             category_id=category_id,
             role='player'
         ).values_list('user_id', flat=True)
+
         users = User.objects.filter(id__in=user_ids, club=club)
     else:
         users = User.objects.filter(club=club)
 
     created = []
+
     for user in users:
         variable_symbol = f"{settings.variable_symbol_prefix}{user.id:04d}"
+
         payment = MemberPayment.objects.create(
             user=user,
             club=club,
             amount=amount,
+            cycle=cycle,
+            period_start=period_start,
+            period_end=period_end,
             due_date=due_date,
             variable_symbol=variable_symbol,
             is_paid=False,
-            description=description  # <- a túto
+            description=description,
         )
+
         notify_created_member_payment.delay(user.id, amount, due_date)
         created.append(payment.id)
 
     return Response({"created_payments": created}, status=201)
-
 
 @api_view(['PATCH'])
 @permission_classes([IsAdminUser])
@@ -2082,11 +2112,20 @@ def update_member_payment(request, pk):
 @permission_classes([IsAdminUser])
 def admin_member_payments(request):
     if request.method == 'GET':
-        payments = MemberPayment.objects.select_related('user').filter(club=request.user.club)
+        payments = (
+            MemberPayment.objects
+            .select_related('user')
+            .filter(club=request.user.club)
+            .order_by('-period_start', '-due_date', 'user__last_name', 'user__first_name')
+        )
+
         data = [
             {
                 "id": p.id,
                 "amount": str(p.amount),
+                "cycle": p.cycle,
+                "period_start": p.period_start,
+                "period_end": p.period_end,
                 "due_date": p.due_date,
                 "is_paid": p.is_paid,
                 "description": p.description,
@@ -2099,12 +2138,14 @@ def admin_member_payments(request):
             }
             for p in payments
         ]
+
         return Response(data)
 
     elif request.method == 'PUT':
-        # 🔥 Ak príde zoznam
+        # Ak príde zoznam
         if isinstance(request.data, list):
             updated = []
+
             for item in request.data:
                 payment_id = item.get("id")
                 is_paid = item.get("is_paid")
@@ -2113,43 +2154,55 @@ def admin_member_payments(request):
                     continue
 
                 try:
-                    payment = MemberPayment.objects.get(id=payment_id, club=request.user.club)
+                    payment = MemberPayment.objects.get(
+                        id=payment_id,
+                        club=request.user.club
+                    )
+
                     payment.is_paid = is_paid
                     payment.save()
+
                     notify_payment_status.delay(
                         user_id=payment.user.id,
                         is_paid=is_paid,
                         amount=str(payment.amount),
                         vs=payment.variable_symbol
                     )
+
                     updated.append(payment_id)
+
                 except MemberPayment.DoesNotExist:
                     continue
 
             return Response({"success": True, "updated": updated})
 
-        # 🔥 Ak príde iba jeden objekt
-        else:
-            payment_id = request.data.get("id")
-            is_paid = request.data.get("is_paid")
+        # Ak príde iba jeden objekt
+        payment_id = request.data.get("id")
+        is_paid = request.data.get("is_paid")
 
-            if payment_id is None or is_paid is None:
-                return Response({"error": "Chýbajú údaje."}, status=400)
+        if payment_id is None or is_paid is None:
+            return Response({"error": "Chýbajú údaje."}, status=400)
 
-            try:
-                payment = MemberPayment.objects.get(id=payment_id, club=request.user.club)
-                payment.is_paid = is_paid
-                payment.save()
-                notify_payment_status.delay(
-                    user_id=payment.user.id,
-                    is_paid=is_paid,
-                    amount=str(payment.amount),
-                    vs=payment.variable_symbol
-                )
-                return Response({"success": True, "updated": [payment_id]})
-            except MemberPayment.DoesNotExist:
-                return Response({"error": "Platba neexistuje."}, status=404)
+        try:
+            payment = MemberPayment.objects.get(
+                id=payment_id,
+                club=request.user.club
+            )
 
+            payment.is_paid = is_paid
+            payment.save()
+
+            notify_payment_status.delay(
+                user_id=payment.user.id,
+                is_paid=is_paid,
+                amount=str(payment.amount),
+                vs=payment.variable_symbol
+            )
+
+            return Response({"success": True, "updated": [payment_id]})
+
+        except MemberPayment.DoesNotExist:
+            return Response({"error": "Platba neexistuje."}, status=404)
 
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.permissions import IsAdminUser

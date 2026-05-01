@@ -105,7 +105,15 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost,http://localhost:3000,http://localhost:8081,https://ludimus.sk,https://www.ludimus.sk,https://app.ludimus.sk"
+        "http://localhost,"
+        "http://localhost:3000,"
+        "http://localhost:5175,"
+        "http://127.0.0.1:5175,"
+        "http://localhost:8081,"
+        "http://127.0.0.1:8081,"
+        "https://ludimus.sk,"
+        "https://www.ludimus.sk,"
+        "https://app.ludimus.sk"
     ).split(",")
     if origin.strip()
 ]
