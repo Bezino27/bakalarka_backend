@@ -18,7 +18,7 @@ load_dotenv()
 # ZÁKLADNÉ NASTAVENIA
 # =========================================================
 SECRET_KEY = os.getenv("SECRET_KEY", "unsafe-dev-key")
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 ALLOWED_HOSTS = [
     host.strip()
