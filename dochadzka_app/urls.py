@@ -140,6 +140,7 @@ urlpatterns = [
     path("trial-request/", trial_request_view, name="trial-request"),
     path('coach-overview/', coach_overview_view, name='coach_overview'),
     path("category-vote-reminder-settings/",category_vote_reminder_settings_view,name="category-vote-reminder-settings",),
+    path("admin-member-payments/<int:pk>/",update_member_payment, name="update_member_payment"),
     
 
 
