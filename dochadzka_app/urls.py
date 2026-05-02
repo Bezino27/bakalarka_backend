@@ -23,7 +23,7 @@ from .views import (me_view, login_view, save_expo_push_token, register_user, ch
                     training_schedule_run_now, coach_overview_view,
                     training_schedules_process_now,EmailOrUsernameTokenObtainPairView, category_vote_reminder_settings_view,
 )
-
+from . import views_system_admin
 urlpatterns = [
     path('me/', me_view, name='me'),
     path('token/', EmailOrUsernameTokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -142,9 +142,22 @@ urlpatterns = [
     path("category-vote-reminder-settings/",category_vote_reminder_settings_view,name="category-vote-reminder-settings",),
     path("admin-member-payments/<int:pk>/",update_member_payment, name="update_member_payment"),
     
+    # SYSTEM ADMIN
+    path("system-admin/overview/", views_system_admin.system_admin_overview, name="system-admin-overview"),
 
+    path("system-admin/clubs/", views_system_admin.system_admin_clubs, name="system-admin-clubs"),
+    path("system-admin/clubs/<int:club_id>/", views_system_admin.system_admin_club_detail, name="system-admin-club-detail"),
 
+    path("system-admin/users/", views_system_admin.system_admin_users, name="system-admin-users"),
+    path("system-admin/users/<int:user_id>/", views_system_admin.system_admin_user_detail, name="system-admin-user-detail"),
 
+    path("system-admin/member-payments/", views_system_admin.system_admin_member_payments, name="system-admin-member-payments"),
+    path("system-admin/member-payments/<int:payment_id>/", views_system_admin.system_admin_member_payment_detail, name="system-admin-member-payment-detail"),
+
+    path("system-admin/orders/", views_system_admin.system_admin_orders, name="system-admin-orders"),
+    path("system-admin/orders/<int:order_id>/", views_system_admin.system_admin_order_detail, name="system-admin-order-detail"),
+
+    path("system-admin/club-usage/", views_system_admin.system_admin_club_usage, name="system-admin-club-usage"),
 
 
 

@@ -61,6 +61,8 @@ def me_view(request):
         'side': user.side,
         'position': user.position.name if user.position else None,
         'preferred_role': user.preferred_role,
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser,
     }
 
     return Response(data)
