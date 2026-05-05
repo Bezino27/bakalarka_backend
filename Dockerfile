@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8000
 
 # Spustíme aplikáciu
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "dochadzka_backend.wsgi:application"]
+CMD ["gunicorn", "dochadzka_backend.wsgi:application", "--config", "gunicorn.conf.py"]

@@ -1,1 +1,1 @@
-web: gunicorn dochadzka_backend.wsgi --log-file -
+web: gunicorn dochadzka_backend.wsgi:application --config gunicorn.conf.py

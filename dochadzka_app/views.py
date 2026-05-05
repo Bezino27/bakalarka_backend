@@ -20,6 +20,28 @@ from django.db.models.functions import Cast
 User = get_user_model()
 
 
+def user_is_club_admin(user) -> bool:
+    return bool(
+        user
+        and user.is_authenticated
+        and (
+            user.is_staff
+            or user.roles.filter(role=Role.ADMIN, category__club=user.club).exists()
+        )
+    )
+
+
+def user_is_category_coach_or_admin(user, category) -> bool:
+    if not user or not user.is_authenticated or not user.club_id:
+        return False
+    if not category or category.club_id != user.club_id:
+        return False
+    return user_is_club_admin(user) or user.roles.filter(
+        role=Role.COACH,
+        category=category,
+    ).exists()
+
+
 @api_view(['GET', 'PUT'])
 @permission_classes([IsAuthenticated])
 def me_view(request):
@@ -110,6 +132,9 @@ def login_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_categories(request, club_id):
+    if not request.user.is_superuser and request.user.club_id != club_id:
+        return Response({"detail": "Nemáš oprávnenie zobraziť kategórie tohto klubu."}, status=403)
+
     # Skontrolujeme, či klub s daným id existuje
     try:
         club = Club.objects.get(id=club_id)
@@ -152,11 +177,19 @@ def create_training_view(request):
     created_trainings = []
 
     for cat_id in category_ids:
+        try:
+            category = Category.objects.get(id=cat_id, club=request.user.club)
+        except Category.DoesNotExist:
+            return Response({"error": "Kategória neexistuje."}, status=404)
+
+        if not user_is_category_coach_or_admin(request.user, category):
+            return Response({"error": "Nemáš oprávnenie vytvoriť tréning v tejto kategórii."}, status=403)
+
         data = {
             "description": request.data.get("description"),
             "location": request.data.get("location"),
             "date": request.data.get("date"),
-            "category": cat_id
+            "category": category.id
         }
 
         serializer = TrainingCreateSerializer(data=data)
@@ -391,6 +424,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def test_push(request):
     token = request.data.get("token")  # teraz už bude fungovať
     if not token:
@@ -719,7 +753,7 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 
 
 @api_view(['GET'])
@@ -727,43 +761,45 @@ from django.db.models import Q
 def chat_users_list(request):
     user = request.user
     club = user.club
-    roles = UserCategoryRole.objects.filter(user=user).values_list("role", flat=True)
+    roles = user.roles.values_list("role", flat=True)
     is_coach_or_admin = any(r.lower() in ['coach', 'admin'] for r in roles)
 
     users = User.objects.filter(club=club).exclude(id=user.id)
 
-    filtered_users = []
-    for u in users:
-        u_roles = UserCategoryRole.objects.filter(user=u).values_list("role", flat=True)
-        u_is_coach_or_admin = any(r.lower() in ['coach', 'admin'] for r in u_roles)
+    # Hráč vidí iba trénerov/adminov, tréner/admin vidí celý klub.
+    if not is_coach_or_admin:
+        users = users.filter(roles__role__in=["coach", "admin"]).distinct()
 
-        # Ak si tréner alebo admin, zobraz všetkých
-        # Inak zobraz len trénerov a adminov
-        if is_coach_or_admin or u_is_coach_or_admin:
-            messages_between = Message.objects.filter(
-                Q(sender=user, recipient=u) | Q(sender=u, recipient=user)
-            )
+    last_message_timestamp = (
+        Message.objects
+        .filter(Q(sender=user, recipient=OuterRef("pk")) | Q(sender=OuterRef("pk"), recipient=user))
+        .order_by("-timestamp")
+        .values("timestamp")[:1]
+    )
+    unread_messages = Message.objects.filter(sender=OuterRef("pk"), recipient=user, read=False)
 
-            last_msg = messages_between.order_by("-timestamp").first()
-            last_timestamp = last_msg.timestamp.isoformat() if last_msg else None
-            has_unread = messages_between.filter(sender=u, recipient=user, read=False).exists()
-
-            filtered_users.append({
-                "id": u.id,
-                "username": u.username,
-                "full_name": f"{u.first_name} {u.last_name}".strip(),
-                "last_message_timestamp": last_timestamp,
-                "has_unread": has_unread,
-                "number": u.number,
-            })
-
-    sorted_users = sorted(
-        filtered_users,
-        key=lambda x: x["last_message_timestamp"] or "",
-        reverse=True
+    users = (
+        users
+        .annotate(
+            last_message_timestamp=Subquery(last_message_timestamp),
+            has_unread=Exists(unread_messages),
+        )
+        .order_by("-last_message_timestamp", "last_name", "first_name", "username")
     )
 
-    return Response(sorted_users)
+    return Response([
+        {
+            "id": u.id,
+            "username": u.username,
+            "full_name": f"{u.first_name} {u.last_name}".strip(),
+            "last_message_timestamp": (
+                u.last_message_timestamp.isoformat() if u.last_message_timestamp else None
+            ),
+            "has_unread": u.has_unread,
+            "number": u.number,
+        }
+        for u in users
+    ])
 
 
 
@@ -1498,9 +1534,13 @@ from django.db.models.deletion import ProtectedError
 from .models import Match
 
 def user_is_admin_or_match_coach(user, category_id: int) -> bool:
-    return user.roles.filter(
-        Q(role='admin') | Q(role='coach', category_id=category_id)
-    ).exists()
+    if not user or not user.is_authenticated or not user.club_id:
+        return False
+    try:
+        category = Category.objects.get(id=category_id, club=user.club)
+    except Category.DoesNotExist:
+        return False
+    return user_is_category_coach_or_admin(user, category)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1535,9 +1575,15 @@ from dochadzka_app.tasks import send_training_updated_notification
 @permission_classes([IsAuthenticated])
 def training_update_view(request, training_id):
     try:
-        training = Training.objects.get(id=training_id)
+        training = Training.objects.select_related("category").get(
+            id=training_id,
+            club=request.user.club,
+        )
     except Training.DoesNotExist:
         return Response({'error': 'Tréning neexistuje'}, status=status.HTTP_404_NOT_FOUND)
+
+    if not user_is_category_coach_or_admin(request.user, training.category):
+        return Response({"detail": "Nemáš oprávnenie upraviť tento tréning."}, status=403)
 
     if request.method == 'GET':
         serializer = TrainingUpdateSerializer(training)
@@ -3635,9 +3681,12 @@ from .serializers import FormationSerializer, FormationLineSerializer, Formation
 @permission_classes([IsAuthenticated])
 def formations_by_category(request, category_id):
     try:
-        category = Category.objects.get(id=category_id)
+        category = Category.objects.get(id=category_id, club=request.user.club)
     except Category.DoesNotExist:
         return Response({"detail": "Kategória neexistuje"}, status=404)
+
+    if not user_is_category_coach_or_admin(request.user, category):
+        return Response({"detail": "Nemáš oprávnenie pracovať s touto kategóriou."}, status=403)
 
     if request.method == "GET":
         formations = Formation.objects.filter(category=category)
@@ -3657,9 +3706,15 @@ def formations_by_category(request, category_id):
 @permission_classes([IsAuthenticated])
 def formation_detail(request, formation_id):
     try:
-        formation = Formation.objects.get(id=formation_id)
+        formation = Formation.objects.select_related("category").get(
+            id=formation_id,
+            category__club=request.user.club,
+        )
     except Formation.DoesNotExist:
         return Response({"detail": "Formácia neexistuje"}, status=404)
+
+    if not user_is_category_coach_or_admin(request.user, formation.category):
+        return Response({"detail": "Nemáš oprávnenie pracovať s touto formáciou."}, status=403)
 
     if request.method == "GET":
         serializer = FormationSerializer(formation)
@@ -3681,9 +3736,15 @@ def formation_detail(request, formation_id):
 @permission_classes([IsAuthenticated])
 def add_line_to_formation(request, formation_id):
     try:
-        formation = Formation.objects.get(id=formation_id)
+        formation = Formation.objects.select_related("category").get(
+            id=formation_id,
+            category__club=request.user.club,
+        )
     except Formation.DoesNotExist:
         return Response({"detail": "Formácia neexistuje"}, status=404)
+
+    if not user_is_category_coach_or_admin(request.user, formation.category):
+        return Response({"detail": "Nemáš oprávnenie pracovať s touto formáciou."}, status=403)
 
     # automaticky určíme číslo päťky
     existing_count = formation.lines.count()
@@ -3700,9 +3761,15 @@ def add_line_to_formation(request, formation_id):
 @permission_classes([IsAuthenticated])
 def formation_player_manage(request, line_id):
     try:
-        line = FormationLine.objects.get(id=line_id)
+        line = FormationLine.objects.select_related("formation__category").get(
+            id=line_id,
+            formation__category__club=request.user.club,
+        )
     except FormationLine.DoesNotExist:
         return Response({"detail": "Päťka neexistuje"}, status=404)
+
+    if not user_is_category_coach_or_admin(request.user, line.formation.category):
+        return Response({"detail": "Nemáš oprávnenie pracovať s touto formáciou."}, status=403)
 
     if request.method == "POST":
         serializer = FormationPlayerSerializer(data=request.data)
@@ -3754,9 +3821,12 @@ def players_in_category(request, category_id):
     Vráti všetkých hráčov (role='player') v danej kategórii.
     """
     try:
-        category = Category.objects.get(id=category_id)
+        category = Category.objects.get(id=category_id, club=request.user.club)
     except Category.DoesNotExist:
         return Response({"detail": "Kategória neexistuje"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not user_is_category_coach_or_admin(request.user, category):
+        return Response({"detail": "Nemáš oprávnenie zobraziť hráčov tejto kategórie."}, status=403)
 
     # nájdi používateľov s rolou 'player' v danej kategórii
     roles = UserCategoryRole.objects.filter(category=category, role="player").select_related("user", "user__position")
@@ -3785,12 +3855,23 @@ def formation_with_attendance(request, category_id, training_id):
     from .models import TrainingAttendance, Formation
 
     try:
-        formations = Formation.objects.filter(category_id=category_id)
-    except Formation.DoesNotExist:
+        category = Category.objects.get(id=category_id, club=request.user.club)
+    except Category.DoesNotExist:
         return Response({"detail": "Kategória neexistuje"}, status=404)
 
+    if not user_is_category_coach_or_admin(request.user, category):
+        return Response({"detail": "Nemáš oprávnenie zobraziť túto formáciu."}, status=403)
+
+    training = get_object_or_404(
+        Training,
+        id=training_id,
+        category=category,
+        club=request.user.club,
+    )
+    formations = Formation.objects.filter(category=category)
+
     # načítaj všetky attendance pre daný tréning
-    attendances = TrainingAttendance.objects.filter(training_id=training_id)
+    attendances = TrainingAttendance.objects.filter(training=training)
     attendance_map = {a.user_id: a.status for a in attendances}
 
     serializer = FormationSerializer(formations, many=True)

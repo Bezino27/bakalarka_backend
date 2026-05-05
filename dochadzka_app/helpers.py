@@ -1,4 +1,9 @@
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
+
+EXPO_PUSH_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 def send_push_notification(
     token: str,
@@ -28,8 +33,13 @@ def send_push_notification(
         payload["data"] = data
 
     try:
-        response = httpx.post("https://exp.host/--/api/v2/push/send", json=payload)
+        response = httpx.post(
+            "https://exp.host/--/api/v2/push/send",
+            json=payload,
+            timeout=EXPO_PUSH_TIMEOUT,
+        )
         response.raise_for_status()
         return response
     except Exception as e:
-        print("❌ Expo push chyba:", e)
+        logger.warning("Expo push chyba: %s", e)
+        return None

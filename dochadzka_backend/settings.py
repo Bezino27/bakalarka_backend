@@ -169,12 +169,13 @@ WSGI_APPLICATION = "dochadzka_backend.wsgi.application"
 # DATABÁZA
 # =========================================================
 DATABASE_URL = os.getenv("DATABASE_URL")
+DB_CONN_MAX_AGE = int(os.getenv("DB_CONN_MAX_AGE", "300"))
 
 if DATABASE_URL:
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
-            conn_max_age=600,
+            conn_max_age=DB_CONN_MAX_AGE,
             ssl_require=False,
         )
     }
@@ -187,7 +188,7 @@ else:
             "PASSWORD": os.getenv("DB_PASSWORD"),
             "HOST": os.getenv("DB_HOST", "host.docker.internal"),
             "PORT": os.getenv("DB_PORT", "5432"),
-            "CONN_MAX_AGE": 600,
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
         }
     }
 
@@ -206,6 +207,11 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = int(os.getenv("CELERY_WORKER_MAX_TASKS_PER_CHILD", "200"))
+CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER", "1"))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
+CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
 
 
 # =========================================================
