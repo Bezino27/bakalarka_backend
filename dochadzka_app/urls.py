@@ -22,6 +22,7 @@ from .views import (me_view, login_view, save_expo_push_token, register_user, ch
                     training_schedule_detail,contact_form_view, trial_request_view,
                     training_schedule_run_now, coach_overview_view,
                     training_schedules_process_now,EmailOrUsernameTokenObtainPairView, category_vote_reminder_settings_view,
+                    linked_accounts_list_view, linked_account_add_view, linked_account_switch_view, linked_account_delete_view,
 )
 from . import views_system_admin
 urlpatterns = [
@@ -140,6 +141,10 @@ urlpatterns = [
     path("trial-request/", trial_request_view, name="trial-request"),
     path('coach-overview/', coach_overview_view, name='coach_overview'),
     path("category-vote-reminder-settings/",category_vote_reminder_settings_view,name="category-vote-reminder-settings",),
+    path("linked-accounts/", linked_accounts_list_view, name="linked-accounts-list"),
+    path("linked-accounts/add/", linked_account_add_view, name="linked-accounts-add"),
+    path("linked-accounts/switch/", linked_account_switch_view, name="linked-accounts-switch"),
+    path("linked-accounts/<int:user_id>/", linked_account_delete_view, name="linked-accounts-delete"),
     path("admin-member-payments/<int:pk>/",update_member_payment, name="update_member_payment"),
     
     # SYSTEM ADMIN
@@ -162,5 +167,4 @@ urlpatterns = [
 
 
 ]
-
 

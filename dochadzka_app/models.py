@@ -44,6 +44,33 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
+
+class LinkedAccount(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="linked_accounts",
+    )
+    linked_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="linked_to_accounts",
+    )
+    club = models.ForeignKey(
+        Club,
+        on_delete=models.CASCADE,
+        related_name="linked_accounts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("owner", "linked_user")
+        ordering = ["linked_user__last_name", "linked_user__first_name", "linked_user__username"]
+
+    def __str__(self):
+        return f"{self.owner} -> {self.linked_user}"
+
+
 class ExpoPushToken(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="expo_tokens")
     token = models.CharField(max_length=255, unique=True)

@@ -5318,3 +5318,190 @@ def category_vote_reminder_settings_view(request):
         rebuild_training_vote_reminders(training)
 
     return Response(CategoryVoteReminderSettingSerializer(setting).data, status=200)
+
+
+from django.db import transaction
+from django.db.models import Q
+from rest_framework_simplejwt.tokens import RefreshToken
+from .models import LinkedAccount
+from .serializers import LinkedAccountUserSerializer
+
+
+def _linked_account_user_payload(user, account_type, is_current):
+    full_name = f"{user.first_name} {user.last_name}".strip() or user.username
+    return {
+        "id": user.id,
+        "name": full_name,
+        "username": user.username,
+        "type": account_type,
+        "is_current": is_current,
+    }
+
+
+def _token_response_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+        },
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def linked_accounts_list_view(request):
+    user = request.user
+    data = [_linked_account_user_payload(user, "main", True)]
+
+    links = (
+        LinkedAccount.objects
+        .filter(owner=user, club=user.club)
+        .select_related("linked_user", "club")
+        .order_by("linked_user__last_name", "linked_user__first_name", "linked_user__username")
+    )
+
+    data.extend(
+        _linked_account_user_payload(link.linked_user, "linked", False)
+        for link in links
+    )
+
+    serializer = LinkedAccountUserSerializer(data, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def linked_account_add_view(request):
+    username_or_email = (request.data.get("username") or "").strip()
+    password = request.data.get("password") or ""
+
+    if not username_or_email or not password:
+        return Response(
+            {"error": "Zadaj používateľské meno alebo email a heslo."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not request.user.club_id:
+        return Response(
+            {"error": "Tvoj účet nie je priradený ku klubu, preto nemôžeš pridávať prepojené účty."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    UserModel = get_user_model()
+    lookup = {"email__iexact": username_or_email} if "@" in username_or_email else {"username__iexact": username_or_email}
+
+    try:
+        target_user = UserModel.objects.select_related("club").get(**lookup)
+    except UserModel.DoesNotExist:
+        return Response(
+            {"error": "Účet s týmito údajmi neexistuje."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    except UserModel.MultipleObjectsReturned:
+        return Response(
+            {"error": "Našli sme viac účtov s rovnakým emailom. Použi používateľské meno."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if target_user.id == request.user.id:
+        return Response(
+            {"error": "Nemôžeš pridať svoj vlastný účet ako prepojený účet."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not target_user.check_password(password):
+        return Response(
+            {"error": "Heslo pre pridávaný účet nie je správne."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if target_user.club_id != request.user.club_id:
+        return Response(
+            {"error": "Môžeš pridať iba účet z rovnakého klubu."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if LinkedAccount.objects.filter(owner=request.user, linked_user=target_user).exists():
+        return Response(
+            {"error": "Tento účet už máš pridaný medzi prepojenými účtami."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        LinkedAccount.objects.create(
+            owner=request.user,
+            linked_user=target_user,
+            club=request.user.club,
+        )
+        LinkedAccount.objects.get_or_create(
+            owner=target_user,
+            linked_user=request.user,
+            defaults={"club": request.user.club},
+        )
+
+    account = _linked_account_user_payload(target_user, "linked", False)
+    return Response(
+        {
+            "detail": "Účet bol úspešne prepojený.",
+            "account": account,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def linked_account_switch_view(request):
+    try:
+        user_id = int(request.data.get("user_id"))
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "Neplatné ID účtu."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if user_id == request.user.id:
+        return Response(_token_response_for_user(request.user))
+
+    link = (
+        LinkedAccount.objects
+        .filter(owner=request.user, linked_user_id=user_id, club=request.user.club)
+        .select_related("linked_user")
+        .first()
+    )
+
+    if not link:
+        return Response(
+            {"error": "Na tento účet sa nemôžeš prepnúť, pretože nie je prepojený s aktuálnym účtom."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    return Response(_token_response_for_user(link.linked_user))
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def linked_account_delete_view(request, user_id):
+    if user_id == request.user.id:
+        return Response(
+            {"error": "Nemôžeš odpojiť aktuálne prihlásený účet od samého seba."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    deleted_count, _ = LinkedAccount.objects.filter(
+        Q(owner=request.user, linked_user_id=user_id)
+        | Q(owner_id=user_id, linked_user=request.user),
+        club=request.user.club,
+    ).delete()
+
+    if deleted_count == 0:
+        return Response(
+            {"error": "Prepojenie účtov neexistuje alebo k nemu nemáš oprávnenie."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    return Response({"detail": "Účet bol odpojený."})

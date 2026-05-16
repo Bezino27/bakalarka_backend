@@ -12,7 +12,8 @@ from .models import (
     Match,
     MatchParticipation,
     Announcement,AnnouncementRead, ExpoPushToken, Message, MessageReaction, MatchNomination, ClubPaymentSettings, 
-    MemberPayment,OrderPayment, JerseyOrder, TrainingSchedule, TrainingScheduleItem
+    MemberPayment,OrderPayment, JerseyOrder, TrainingSchedule, TrainingScheduleItem,
+    LinkedAccount,
 )
 from .models import CategoryVoteReminderSetting, TrainingVoteReminder
 
@@ -46,6 +47,21 @@ class UserAdmin(BaseUserAdmin):
 @admin.register(ExpoPushToken)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ('user','token', 'created_at')
+
+
+@admin.register(LinkedAccount)
+class LinkedAccountAdmin(admin.ModelAdmin):
+    list_display = ("owner", "linked_user", "club", "created_at")
+    list_filter = ("club", "created_at")
+    search_fields = (
+        "owner__username",
+        "owner__first_name",
+        "owner__last_name",
+        "linked_user__username",
+        "linked_user__first_name",
+        "linked_user__last_name",
+    )
+    autocomplete_fields = ("owner", "linked_user", "club")
 
 @admin.register(Message)
 class CategoryAdmin(admin.ModelAdmin):

@@ -895,3 +895,11 @@ class CategoryVoteReminderSettingUpsertSerializer(serializers.Serializer):
             attrs["reminder_hours"] = []
 
         return attrs
+
+
+class LinkedAccountUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    username = serializers.CharField()
+    type = serializers.ChoiceField(choices=(("main", "main"), ("linked", "linked")))
+    is_current = serializers.BooleanField()
