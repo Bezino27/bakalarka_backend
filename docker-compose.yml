@@ -17,7 +17,7 @@ services:
         condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
-      gunicorn dochadzka_backend.wsgi:application --config gunicorn.conf.py"
+      daphne -b 0.0.0.0 -p 8000 dochadzka_backend.asgi:application"
     volumes:
       - ./media:/app/media
       - /etc/localtime:/etc/localtime:ro

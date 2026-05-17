@@ -50,6 +50,7 @@ AUTH_USER_MODEL = "dochadzka_app.User"
 # APLIKÁCIE
 # =========================================================
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -59,6 +60,8 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "rest_framework",
     "dochadzka_app",
+    "chat",
+    "channels",
     "corsheaders",
     "rest_framework_simplejwt",
     "django_rest_passwordreset",
@@ -163,6 +166,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "dochadzka_backend.wsgi.application"
+ASGI_APPLICATION = "dochadzka_backend.asgi.application"
 
 
 # =========================================================
@@ -212,6 +216,18 @@ CELERY_WORKER_MAX_TASKS_PER_CHILD = int(os.getenv("CELERY_WORKER_MAX_TASKS_PER_C
 CELERY_WORKER_PREFETCH_MULTIPLIER = int(os.getenv("CELERY_WORKER_PREFETCH_MULTIPLIER", "1"))
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "240"))
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "300"))
+
+CHANNEL_LAYER_BACKEND = os.getenv("CHANNEL_LAYER_BACKEND", "channels_redis.core.RedisChannelLayer")
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": CHANNEL_LAYER_BACKEND,
+    }
+}
+
+if CHANNEL_LAYER_BACKEND == "channels_redis.core.RedisChannelLayer":
+    CHANNEL_LAYERS["default"]["CONFIG"] = {
+        "hosts": [os.getenv("CHANNEL_REDIS_URL", "redis://redis:6379/2")],
+    }
 
 
 # =========================================================

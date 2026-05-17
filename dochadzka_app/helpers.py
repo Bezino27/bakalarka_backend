@@ -11,7 +11,8 @@ def send_push_notification(
     message: str,
     user_id: int = None,
     user_name: str = None,
-    data: dict = None  # ← NOVÝ argument
+    data: dict = None,
+    badge: int = None,
 ):
     payload = {
         "to": token,
@@ -20,6 +21,9 @@ def send_push_notification(
         "sound": "sound_post.caf",
         "data": {}
     }
+
+    if badge is not None:
+        payload["badge"] = badge
 
     if user_id is not None and user_name is not None:
         # prioritne chat
