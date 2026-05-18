@@ -132,6 +132,22 @@ class ChatApiTests(TestCase):
             is_typing=False,
         )
 
+    def test_group_typing_sends_event_to_other_group_member(self):
+        response = self.client.post(
+            "/api/chat/conversations/group/",
+            {"name": "Rodicia U10", "member_ids": [self.friend.id, self.group_member.id]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+
+        async_to_sync(self._assert_typing_event)(
+            sender=self.user,
+            recipient=self.friend,
+            conversation_id=response.data["id"],
+            event_type="typing.start",
+            is_typing=True,
+        )
+
     def test_typing_event_does_not_create_message(self):
         conversation_id = self.create_direct().data["id"]
         before_count = ChatMessage.objects.count()

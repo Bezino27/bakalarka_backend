@@ -1,7 +1,7 @@
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from .models import ChatConversation, ChatConversationMember
+from .models import ChatConversationMember
 from .realtime import user_group_name
 
 
@@ -75,13 +75,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         ).exists()
 
         if not is_member:
-            return []
-
-        conversation_type = ChatConversation.objects.filter(
-            id=conversation_id,
-        ).values_list("type", flat=True).first()
-
-        if conversation_type != ChatConversation.DIRECT:
             return []
 
         return list(
