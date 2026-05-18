@@ -16,5 +16,5 @@ COPY . .
 # Exponujeme port 8000
 EXPOSE 8000
 
-# Spustíme aplikáciu
-CMD ["gunicorn", "dochadzka_backend.wsgi:application", "--config", "gunicorn.conf.py"]
+# Spustíme ASGI aplikáciu, aby fungovali aj Django Channels WebSockety.
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "dochadzka_backend.asgi:application"]
