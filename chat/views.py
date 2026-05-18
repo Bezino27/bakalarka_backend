@@ -33,7 +33,7 @@ from .serializers import (
     UpdateGroupMembersSerializer,
     VotePollSerializer,
 )
-from .realtime import broadcast_chat_event
+from .realtime import broadcast_chat_event_to_users
 from .tasks import notify_new_chat_message
 
 User = get_user_model()
@@ -56,19 +56,18 @@ def get_message_for_realtime(message_id):
 
 
 def broadcast_message_created(message, request=None):
-    broadcast_chat_event(
-        message.conversation_id,
+    user_ids = ChatConversationMember.objects.filter(
+        conversation=message.conversation,
+    ).values_list("user_id", flat=True)
+    broadcast_chat_event_to_users(
+        user_ids,
         "message.created",
         serialize_chat_message(message, request),
     )
 
 
 def broadcast_message_updated(message, request=None):
-    broadcast_chat_event(
-        message.conversation_id,
-        "message.updated",
-        serialize_chat_message(message, request),
-    )
+    return
 
 
 def user_is_conversation_member(user, conversation):
@@ -354,6 +353,13 @@ def conversation_messages(request, conversation_id):
 
         limit = min(max(limit, 1), 50)
         before_message_id = request.GET.get("before_message_id")
+        after_message_id = request.GET.get("after_message_id")
+
+        if before_message_id and after_message_id:
+            return Response(
+                {"detail": "Použi iba jeden z parametrov before_message_id alebo after_message_id."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         messages = (
             ChatMessage.objects
@@ -362,6 +368,40 @@ def conversation_messages(request, conversation_id):
             .prefetch_related("reactions__user", "poll__options__votes__user")
             .order_by("-created_at")
         )
+
+        if after_message_id:
+            try:
+                after_message_id_int = int(after_message_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Parameter after_message_id musí byť číslo."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            after_message = get_object_or_404(
+                ChatMessage,
+                id=after_message_id_int,
+                conversation=conversation,
+            )
+            messages = messages.filter(id__gt=after_message.id).order_by("created_at")
+            page = list(messages[:limit + 1])
+            has_more = len(page) > limit
+            page = page[:limit]
+
+            serializer = ChatMessageSerializer(
+                page,
+                many=True,
+                context={"request": request},
+            )
+
+            return Response({
+                "results": serializer.data,
+                "limit": limit,
+                "before_message_id": None,
+                "after_message_id": after_message_id,
+                "has_more": has_more,
+                "next_before_message_id": None,
+            })
 
         if before_message_id:
             try:
@@ -377,7 +417,7 @@ def conversation_messages(request, conversation_id):
                 id=before_message_id_int,
                 conversation=conversation,
             )
-            messages = messages.filter(created_at__lt=before_message.created_at)
+            messages = messages.filter(id__lt=before_message.id)
 
         page = list(messages[:limit + 1])
         has_more = len(page) > limit

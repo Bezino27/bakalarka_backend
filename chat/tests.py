@@ -1,11 +1,15 @@
 from unittest.mock import patch
 
+from asgiref.sync import async_to_sync
+from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from dochadzka_app.models import Category, Club, Role, UserCategoryRole
+from dochadzka_backend.asgi import application
 
 from .models import (
     ChatConversation,
@@ -20,6 +24,7 @@ from .models import (
 User = get_user_model()
 
 
+@override_settings(CHANNEL_LAYERS={"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}})
 class ChatApiTests(TestCase):
     def setUp(self):
         self.club = Club.objects.create(name="Ludimus")
@@ -106,6 +111,91 @@ class ChatApiTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(ChatConversation.objects.count(), 0)
+
+    def test_typing_start_sends_event_to_other_direct_member(self):
+        conversation_id = self.create_direct().data["id"]
+        async_to_sync(self._assert_typing_event)(
+            sender=self.user,
+            recipient=self.friend,
+            conversation_id=conversation_id,
+            event_type="typing.start",
+            is_typing=True,
+        )
+
+    def test_typing_stop_sends_is_typing_false(self):
+        conversation_id = self.create_direct().data["id"]
+        async_to_sync(self._assert_typing_event)(
+            sender=self.user,
+            recipient=self.friend,
+            conversation_id=conversation_id,
+            event_type="typing.stop",
+            is_typing=False,
+        )
+
+    def test_typing_event_does_not_create_message(self):
+        conversation_id = self.create_direct().data["id"]
+        before_count = ChatMessage.objects.count()
+
+        async_to_sync(self._assert_typing_event)(
+            sender=self.user,
+            recipient=self.friend,
+            conversation_id=conversation_id,
+            event_type="typing.start",
+            is_typing=True,
+        )
+
+        self.assertEqual(ChatMessage.objects.count(), before_count)
+
+    def test_outsider_cannot_send_typing_to_foreign_conversation(self):
+        conversation_id = self.create_direct().data["id"]
+        async_to_sync(self._assert_typing_not_delivered)(
+            sender=self.outsider,
+            recipient=self.friend,
+            conversation_id=conversation_id,
+        )
+
+    async def _connect_socket(self, user):
+        token = str(RefreshToken.for_user(user).access_token)
+        communicator = WebsocketCommunicator(application, f"/ws/chat/?token={token}")
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        return communicator
+
+    async def _assert_typing_event(self, sender, recipient, conversation_id, event_type, is_typing):
+        sender_socket = await self._connect_socket(sender)
+        recipient_socket = await self._connect_socket(recipient)
+
+        try:
+            await sender_socket.send_json_to({
+                "type": event_type,
+                "conversation_id": conversation_id,
+            })
+            event = await recipient_socket.receive_json_from(timeout=1)
+
+            self.assertEqual(event["type"], "typing")
+            self.assertEqual(event["payload"]["type"], "typing")
+            self.assertEqual(event["payload"]["conversation_id"], str(conversation_id))
+            self.assertEqual(event["payload"]["user_id"], sender.id)
+            self.assertEqual(event["payload"]["user_name"], sender.get_full_name())
+            self.assertEqual(event["payload"]["is_typing"], is_typing)
+        finally:
+            await sender_socket.disconnect()
+            await recipient_socket.disconnect()
+
+    async def _assert_typing_not_delivered(self, sender, recipient, conversation_id):
+        sender_socket = await self._connect_socket(sender)
+        recipient_socket = await self._connect_socket(recipient)
+
+        try:
+            await sender_socket.send_json_to({
+                "type": "typing.start",
+                "conversation_id": conversation_id,
+            })
+            delivered = await recipient_socket.receive_nothing(timeout=0.2)
+            self.assertTrue(delivered)
+        finally:
+            await sender_socket.disconnect()
+            await recipient_socket.disconnect()
 
     def test_group_conversation_is_created(self):
         response = self.client.post(
@@ -348,6 +438,17 @@ class ChatApiTests(TestCase):
         self.assertEqual(next_response.status_code, 200)
         self.assertEqual([item["text"] for item in next_response.data["results"]], ["Sprava 1", "Sprava 2"])
 
+        after_response = self.client.get(
+            f"/api/chat/conversations/{conversation_id}/messages/",
+            {
+                "limit": 5,
+                "after_message_id": response.data["results"][-1]["id"],
+            },
+        )
+
+        self.assertEqual(after_response.status_code, 200)
+        self.assertEqual([item["text"] for item in after_response.data["results"]], [])
+
     def test_messages_reject_invalid_cursor_params(self):
         conversation_id = self.create_direct().data["id"]
 
@@ -359,12 +460,19 @@ class ChatApiTests(TestCase):
             f"/api/chat/conversations/{conversation_id}/messages/",
             {"before_message_id": "nula"},
         )
+        after_cursor_response = self.client.get(
+            f"/api/chat/conversations/{conversation_id}/messages/",
+            {"after_message_id": "nula"},
+        )
 
         self.assertEqual(limit_response.status_code, 400)
         self.assertEqual(limit_response.data["detail"], "Parameter limit musí byť číslo.")
 
         self.assertEqual(cursor_response.status_code, 400)
         self.assertEqual(cursor_response.data["detail"], "Parameter before_message_id musí byť číslo.")
+
+        self.assertEqual(after_cursor_response.status_code, 400)
+        self.assertEqual(after_cursor_response.data["detail"], "Parameter after_message_id musí byť číslo.")
 
     @patch("chat.views.notify_new_chat_message.delay")
     def test_mark_conversation_read_sets_last_read_at(self, notify_delay):

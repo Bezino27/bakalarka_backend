@@ -1,25 +1,19 @@
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
-from .models import ChatConversationMember
-from .realtime import conversation_group_name
+from .models import ChatConversation, ChatConversationMember
+from .realtime import user_group_name
 
 
-class ChatConversationConsumer(AsyncJsonWebsocketConsumer):
+class ChatConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
-        self.group_name = conversation_group_name(self.conversation_id)
         self.user = self.scope.get("user")
 
         if not self.user or not self.user.is_authenticated:
             await self.close(code=4401)
             return
 
-        is_member = await self.user_is_member()
-        if not is_member:
-            await self.close(code=4403)
-            return
-
+        self.group_name = user_group_name(self.user.id)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
@@ -30,6 +24,37 @@ class ChatConversationConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content, **kwargs):
         if content.get("type") == "ping":
             await self.send_json({"type": "pong"})
+            return
+
+        event_type = content.get("type")
+        if event_type not in {"typing.start", "typing.stop"}:
+            return
+
+        conversation_id = content.get("conversation_id")
+        if not conversation_id:
+            return
+
+        recipients = await self.get_typing_recipients(conversation_id)
+        if not recipients:
+            return
+
+        payload = {
+            "type": "typing",
+            "conversation_id": str(conversation_id),
+            "user_id": self.user.id,
+            "user_name": self.user.get_full_name() or self.user.username,
+            "is_typing": event_type == "typing.start",
+        }
+
+        for recipient_id in recipients:
+            await self.channel_layer.group_send(
+                user_group_name(recipient_id),
+                {
+                    "type": "chat.event",
+                    "event": "typing",
+                    "payload": payload,
+                },
+            )
 
     async def chat_event(self, event):
         await self.send_json({
@@ -38,9 +63,30 @@ class ChatConversationConsumer(AsyncJsonWebsocketConsumer):
         })
 
     @database_sync_to_async
-    def user_is_member(self):
-        return ChatConversationMember.objects.filter(
-            conversation_id=self.conversation_id,
-            conversation__club=self.user.club,
+    def get_typing_recipients(self, conversation_id):
+        try:
+            conversation_id = int(conversation_id)
+        except (TypeError, ValueError):
+            return []
+
+        is_member = ChatConversationMember.objects.filter(
+            conversation_id=conversation_id,
             user=self.user,
         ).exists()
+
+        if not is_member:
+            return []
+
+        conversation_type = ChatConversation.objects.filter(
+            id=conversation_id,
+        ).values_list("type", flat=True).first()
+
+        if conversation_type != ChatConversation.DIRECT:
+            return []
+
+        return list(
+            ChatConversationMember.objects
+            .filter(conversation_id=conversation_id)
+            .exclude(user=self.user)
+            .values_list("user_id", flat=True)
+        )
