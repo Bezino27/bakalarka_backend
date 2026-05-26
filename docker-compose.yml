@@ -1,18 +1,44 @@
 services:
+  db:
+    image: postgres:16
+    container_name: bakalarka_demo_db
+    restart: always
+    environment:
+      POSTGRES_DB: ludimus_demo
+      POSTGRES_USER: ludimus_demo
+      POSTGRES_PASSWORD: ludimus_demo_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - bakalarka_demo_postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: bakalarka_demo_redis
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - bakalarka_demo_redis_data:/data
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: bakalarka_demo_backend
     restart: always
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - .env
     environment:
       TZ: Europe/Bratislava
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
+      db:
+        condition: service_started
       redis:
         condition: service_healthy
     command: >
@@ -20,20 +46,17 @@ services:
       daphne -b 0.0.0.0 -p 8000 dochadzka_backend.asgi:application"
     volumes:
       - ./media:/app/media
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
 
   celery:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: bakalarka_demo_celery
     restart: always
     env_file:
       - .env
     environment:
       TZ: Europe/Bratislava
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -46,20 +69,17 @@ services:
       --prefetch-multiplier=${CELERY_WORKER_PREFETCH_MULTIPLIER:-1}
     volumes:
       - ./media:/app/media
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
 
   celerybeat:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: bakalarka_demo_celerybeat
     restart: always
     env_file:
       - .env
     environment:
       TZ: Europe/Bratislava
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -68,19 +88,7 @@ services:
     command: celery -A dochadzka_backend beat -l info
     volumes:
       - ./media:/app/media
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-
-  redis:
-    image: redis:7-alpine
-    restart: always
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    volumes:
-      - redis_data:/data
 
 volumes:
-  redis_data:
+  bakalarka_demo_postgres_data:
+  bakalarka_demo_redis_data:
