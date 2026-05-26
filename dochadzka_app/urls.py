@@ -73,6 +73,7 @@ urlpatterns = [
     path("trainings/<int:training_id>/", training_update_view, name="training-update"),
     path("assign-players-to-category/", assign_players_to_category, name="assign_players_to_category"),
     path("set-preferrd-role/", set_preferred_role, name="set_preferred_role"),
+path("set-preferred-role/", set_preferred_role, name="set_preferred_role_correct"),
     path('clubs/<int:club_id>/', club_detail, name='club_detail'),
     path('coach-attendance-summary/', coach_attendance_summary, name='coach_attendance_summary'),
     path('player-attendance/<int:player_id>/', player_attendance_detail),

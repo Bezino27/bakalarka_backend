@@ -1,0 +1,280 @@
+[
+{
+  "model": "sites.site",
+  "pk": 1,
+  "fields": {
+    "domain": "example.com",
+    "name": "example.com"
+  }
+},
+{
+  "model": "dochadzka_app.club",
+  "pk": 1,
+  "fields": {
+    "name": "TUKE",
+    "description": "Tím technickej univerzity košice",
+    "vote_lock_days": 0,
+    "training_lock_hours": 0,
+    "address": "Letná 9",
+    "location_lat": null,
+    "location_lng": null,
+    "phone": null,
+    "email": null,
+    "contact_person": null,
+    "iban": null
+  }
+},
+{
+  "model": "dochadzka_app.club",
+  "pk": 2,
+  "fields": {
+    "name": "Demo klub",
+    "description": "Ukážkový klub pre lokálne spustenie aplikácie.",
+    "vote_lock_days": 2,
+    "training_lock_hours": 2,
+    "address": "Košice",
+    "location_lat": null,
+    "location_lng": null,
+    "phone": "+421900000000",
+    "email": "demo@ludimus.sk",
+    "contact_person": "Demo Admin",
+    "iban": "SK0000000000000000000000"
+  }
+},
+{
+  "model": "dochadzka_app.user",
+  "pk": 1,
+  "fields": {
+    "password": "pbkdf2_sha256$870000$vqqjR0LBYleoy5JHlV34qV$F5JHqub8FyrD/970CDddJ98RMqi85FD7BLvk/lJBmUE=",
+    "last_login": "2026-05-26T20:44:27.576Z",
+    "is_superuser": true,
+    "username": "admin",
+    "first_name": "Demo",
+    "last_name": "Administrátor",
+    "email": "tomikbez@gmail.com",
+    "is_staff": true,
+    "is_active": true,
+    "date_joined": "2026-05-26T20:43:51.297Z",
+    "club": 2,
+    "birth_date": null,
+    "number": "",
+    "height": "",
+    "weight": "",
+    "side": "",
+    "email_2": null,
+    "position": null,
+    "preferred_role": "coach",
+    "iban": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "dochadzka_app.user",
+  "pk": 2,
+  "fields": {
+    "password": "pbkdf2_sha256$870000$sGCwDT8O4PY4xgWFSgWHDv$NWhP5oSLXlPcR0jXrUCVKQ0pGSYxl2fzE5eMLJRjtgI=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "user1",
+    "first_name": "Test",
+    "last_name": "User",
+    "email": "Test@example.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-05-26T21:08:54.958Z",
+    "club": 2,
+    "birth_date": "1997-05-25",
+    "number": "",
+    "height": "",
+    "weight": "",
+    "side": "",
+    "email_2": null,
+    "position": null,
+    "preferred_role": null,
+    "iban": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "dochadzka_app.user",
+  "pk": 3,
+  "fields": {
+    "password": "pbkdf2_sha256$870000$nsHW5zg5abtvvxwHIB5rpD$fMQ6yJKBBqVLR6RD8gOFUJ+jHkdk8QPt5Ri9HfMTo6k=",
+    "last_login": null,
+    "is_superuser": false,
+    "username": "janko",
+    "first_name": "Janko",
+    "last_name": "Novotný",
+    "email": "Janko@gmail.com",
+    "is_staff": false,
+    "is_active": true,
+    "date_joined": "2026-05-26T21:09:35.039Z",
+    "club": 2,
+    "birth_date": "2005-03-14",
+    "number": "",
+    "height": "",
+    "weight": "",
+    "side": "",
+    "email_2": null,
+    "position": null,
+    "preferred_role": null,
+    "iban": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 1,
+  "fields": {
+    "club": 1,
+    "name": "Muži",
+    "description": ""
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 2,
+  "fields": {
+    "club": 1,
+    "name": "juniori",
+    "description": ""
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 3,
+  "fields": {
+    "club": 1,
+    "name": "Dorastenci",
+    "description": "Dorastenci"
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 4,
+  "fields": {
+    "club": 1,
+    "name": "nova",
+    "description": ""
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 5,
+  "fields": {
+    "club": 2,
+    "name": "U15",
+    "description": "Ukážková kategória U15."
+  }
+},
+{
+  "model": "dochadzka_app.category",
+  "pk": 6,
+  "fields": {
+    "club": 2,
+    "name": "U17",
+    "description": "Ukážková kategória U17."
+  }
+},
+{
+  "model": "dochadzka_app.training",
+  "pk": 1,
+  "fields": {
+    "club": 2,
+    "category": 5,
+    "date": "2026-06-02T21:04:00Z",
+    "description": "Tréning",
+    "location": "Tuke",
+    "created_by": 1
+  }
+},
+{
+  "model": "dochadzka_app.match",
+  "pk": 1,
+  "fields": {
+    "club": 2,
+    "category": 5,
+    "date": "2026-06-13T11:14:00Z",
+    "opponent": "Komisia",
+    "location": "Tuke",
+    "description": "Zápas o titul",
+    "video_link": null,
+    "is_home": true
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 1,
+  "fields": {
+    "user": 1,
+    "category": 5,
+    "role": "admin"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 2,
+  "fields": {
+    "user": 1,
+    "category": 5,
+    "role": "coach"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 3,
+  "fields": {
+    "user": 1,
+    "category": 5,
+    "role": "player"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 4,
+  "fields": {
+    "user": 1,
+    "category": 6,
+    "role": "admin"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 5,
+  "fields": {
+    "user": 1,
+    "category": 6,
+    "role": "coach"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 6,
+  "fields": {
+    "user": 1,
+    "category": 6,
+    "role": "player"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 7,
+  "fields": {
+    "user": 3,
+    "category": 5,
+    "role": "player"
+  }
+},
+{
+  "model": "dochadzka_app.usercategoryrole",
+  "pk": 8,
+  "fields": {
+    "user": 2,
+    "category": 5,
+    "role": "player"
+  }
+}
+]
